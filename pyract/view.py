@@ -133,6 +133,12 @@ class GtkComponent(BaseComponent):
 class Component(BaseComponent):
     def __init__(self, **props):
         self.props = {}
+        self.state = None
+        if hasattr(type(self), 'State'):
+            state_cls = getattr(type(self), 'State')
+            self.state = state_cls()
+            self.state.changed_signal.connect(self._observable_changed_cb)
+
         self._subtreelist = None
         self.update(props.items())
 
@@ -178,6 +184,9 @@ def children_keys_dict(children):
     return d
 
 
+_EXCLUDED_KEYS = {_INSTANCE, 'ref'}
+
+
 def render_tree(old, new):
     # Split the tree input
     old_type, old_props = old or (None, {})
@@ -195,12 +204,12 @@ def render_tree(old, new):
     if old_type == new_type:
         changes = []
         for k in old_props.keys():
-            if k.startswith('____'):
+            if k in _EXCLUDED_KEYS:
                 continue
             if k not in new_props:
                 changes.append((k, None))
         for k, v in new_props.items():
-            if k.startswith('____'):
+            if k in _EXCLUDED_KEYS:
                 continue
             if old_props.get(k) != v:
                 changes.append((k, v))
@@ -210,10 +219,14 @@ def render_tree(old, new):
         if instance is not None:
             instance.destroy()
 
+        p = {k: v for k, v in new_props.items() if k not in _EXCLUDED_KEYS}
         if issubclass(new_type, Gtk.Widget):
-            instance = GtkComponent(new_type, **new_props)
+            instance = GtkComponent(new_type, **p)
         else:
-            instance = new_type(**new_props)
+            instance = new_type(**p)
+
+        if new_props.get('ref'):
+            new_props['ref'](instance)
 
     new_props[_INSTANCE] = instance
     return Node(new_type, **new_props)
