@@ -15,11 +15,22 @@
 # You should have received a copy of the GNU General Public License
 # along with Pyract.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
 from gi.repository import GObject
-from typing import Generic
+from typing import Generic, Union, Dict, List
+
+
+PopoType = Union[str, int, float, bool, dict, list]
+
 
 class Observable(GObject.GObject):
     changed_signal = GObject.Signal('changed')
+
+    def serialize(self) -> PopoType:
+        raise NotImplimentedError()
+
+    def deserialize(self, value: PopoType):
+        raise NotImplimentedError()
 
 
 class ObservableValue(Observable):
@@ -37,6 +48,12 @@ class ObservableValue(Observable):
             return
         self._value = new_value
         self.changed_signal.emit()
+
+    def serialize(self) -> PopoType:
+        return self.value
+
+    def deserialize(self, value: PopoType):
+        self.value = value
 
 
 class ObservableModel(Observable):
@@ -72,6 +89,27 @@ class ObservableModel(Observable):
                 self.changed_signal.emit()
         super().__setattr__(k, new)
 
+    def serialize(self) -> Dict[str, PopoType]:
+        ret = {}
+        for k, v in vars(type(self)).items():
+            if isinstance(v, ModelField):
+                ret[k] = getattr(self, k).serialize()
+        return ret
+
+    def serialize_to_path(self, path):
+        j = self.serialize()
+        with open(path, 'w') as f:
+            json.dump(j, f)
+
+    def deserialize(self, value: Dict[str, PopoType]):
+        for k, v in value.items():
+            getattr(self, k).deserialize(v)
+
+    def deserialize_from_path(self, path):
+        with open(path) as f:
+            j = json.load(f)
+        self.deserialize(j)
+
 
 class ModelField():
     def __init__(self, type_, *args, **kwargs):
@@ -87,8 +125,9 @@ class ModelField():
 
 
 class ObservableList(ObservableValue):
-    def __init__(self, value=None, *args, **kwargs):
+    def __init__(self, type_, value=None, *args, **kwargs):
         super().__init__(value or [], *args, **kwargs)
+        self._type = type_
         for v in self.value:
             v.changed_signal.connect(self._item_changed_cb)
 
@@ -119,3 +158,25 @@ class ObservableList(ObservableValue):
         self.value.append(item)
         item.changed_signal.connect(self._item_changed_cb)
         self.changed_signal.emit()
+
+    def clear(self):
+        for item in self:
+            item.disconnect_by_func(self._item_changed_cb)
+        self.value.clear()
+        self.changed_signal.emit()
+
+    def pop(self, index=None):
+        item  = self.value.pop(index)
+        item.disconnect_by_func(self._item_changed_cb)
+        self.changed_signal.emit()
+        return item
+
+    def serialize(self) -> List[PopoType]:
+        return [v.serialize() for v in self]
+
+    def deserialize(self, value: List[PopoType]):
+        self.clear()
+        for v in value:
+            ins = self._type()
+            ins.deserialize(v)
+            self.append(ins)
