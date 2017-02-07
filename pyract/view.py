@@ -37,6 +37,19 @@ class Node(tuple):
             self.instance, self.props)
 
 
+def _node_list_single_widget(nl):
+        widgets = []
+        for node in (nl or []):
+            widgets.extend(node.instance.get_widgets())
+
+        if len(widgets) > 1:
+            raise ChildrenFormatException(
+                'Node list {} should have 1 widget, '
+                'got {}'.format(nl, widgets))
+
+        return widgets[0] if len(widgets) else None
+
+
 class BaseComponent():
     def __init__(self, **props):
         pass
@@ -94,18 +107,9 @@ class GtkComponent(BaseComponent):
 
     def set_property(self, k, v):
         if k == 'popover' and issubclass(self._type, Gtk.MenuButton):
-            widgets = []
-            for node in (v or []):
-                widgets.extend(node.instance.get_widgets())
-
-            if len(widgets) > 1:
-                raise ChildrenFormatException(
-                    'A menubutton popover must have only 1 widget, '
-                    'got {}'.format(widgets))
-            if len(widgets) == 1:
-                self._instance.set_property(k, widgets[0])
-            else:
-                self._instance.set_property(k, None)
+            self._instance.set_property(k, _node_list_single_widget(v))
+        elif k == 'image' and issubclass(self._type, Gtk.Button):
+            self._instance.set_property(k, _node_list_single_widget(v))
         else:
             self._instance.set_property(k, v)
 
@@ -305,6 +309,8 @@ def _get_to_inflate_for_type(type_) -> List[str]:
     if issubclass(type_, Gtk.Widget):
         if issubclass(type_, Gtk.MenuButton):
             l.append('popover')
+        if issubclass(type_, Gtk.Button):
+            l.append('image')
     return l
 
 
