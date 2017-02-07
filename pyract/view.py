@@ -21,9 +21,6 @@ from typing import Union, List
 from .model import Observable
 
 
-_INSTANCE = '____instance____'
-
-
 class Node(tuple):
     def __new__(cls, type_, **kwargs):
         return super(Node, cls).__new__(cls, (type_, kwargs))
@@ -31,6 +28,13 @@ class Node(tuple):
     def __init__(self, type_, **props):
         self.type = type_
         self.props = props
+        # Almost a tuple, but we have this nice mutable instance prop
+        self.instance = None
+
+    def __repr__(self):
+        return '<Node<{}.{}> {} {}>'.format(
+            self.type.__module__, self.type.__name__,
+            self.instance, self.props)
 
 
 class BaseComponent():
@@ -70,32 +74,91 @@ class GtkComponent(BaseComponent):
                 # TODO: Unbind old handler
                 if v is not None:
                     self._instance.connect(k[8:], v)
+            elif k.startswith('child__'):
+                continue # We don't handle the child props ourself
+            elif k == 'auto_grab_focus':
+                if v:
+                    self._setup_auto_grab_focus()
             elif k == 'class_names':
                 self._handle_class_names(v)
+            elif k == 'size_groups':
+                self._handle_size_groups(v)
             elif k == 'children':
                 self._handle_children(v)
             elif k.startswith('____'):
                 continue
             else:
-                self._instance.set_property(k, v)
+                self.set_property(k, v)
+            self._props[k] = v
 
-    def _handle_class_names(self, class_names):
+    def set_property(self, k, v):
+        if k == 'popover' and issubclass(self._type, Gtk.MenuButton):
+            widgets = []
+            for node in (v or []):
+                widgets.extend(node.instance.get_widgets())
+
+            if len(widgets) > 1:
+                raise ChildrenFormatException(
+                    'A menubutton popover must have only 1 widget, '
+                    'got {}'.format(widgets))
+            if len(widgets) == 1:
+                self._instance.set_property(k, widgets[0])
+            else:
+                self._instance.set_property(k, None)
+        else:
+            self._instance.set_property(k, v)
+
+    def __realize_cb(self, instance):
+        instance.grab_focus()
+
+    def _setup_auto_grab_focus(self):
+        if self._instance.get_realized():
+            self._instance.grab_focus()
+        else:
+            self._instance.connect('realize', self.__realize_cb)
+
+    def _handle_class_names(self, new):
         old = self._props.get('class_names', [])
         sc = self._instance.get_style_context()
 
         for cn in old:
-            if cn not in class_names:
+            if cn not in new:
                 sc.remove_class(cn)
-        for cn in class_names:
+        for cn in new:
             if cn not in old:
                 sc.add_class(cn)
 
+    def _handle_size_groups(self, new):
+        old = self._props.get('size_groups', [])
+        for sg in old:
+            if sg not in new:
+                sg.remove_widget(self._instance)
+        for sg in new:
+            if sg not in old:
+                sg.add_widget(self._instance)
+
     def _handle_children(self, child_items):
         children = []
-        for t, props in child_items:
-            children.extend(props[_INSTANCE].get_widgets())
+        for node in child_items:
+            children.extend(node.instance.get_widgets())
 
         if issubclass(self._type, Gtk.Bin):
+            if issubclass(self._type, Gtk.Window):
+                children = []
+                headers = []
+                for node in child_items:
+                    if node.props.get('child__is_header'):
+                        headers.extend(node.instance.get_widgets())
+                    else:
+                        children.extend(node.instance.get_widgets())
+
+                if len(headers) > 1:
+                    raise ChildrenFormatException(
+                        'A window may only have 1 header widget, '
+                        'got {}'.format(headers))
+                if len(headers) == 1:
+                    self._instance.set_titlebar(headers[0])
+
             if len(children) == 1:
                 if self._instance.get_child() != children[0]:
                     old = self._instance.get_child()
@@ -165,8 +228,8 @@ class Component(BaseComponent):
 
     def get_widgets(self):
         widgets = []
-        for t, props in (self._subtreelist or []):
-            widgets.extend(props[_INSTANCE].get_widgets())
+        for node in (self._subtreelist or []):
+            widgets.extend(node.instance.get_widgets())
         return widgets
 
 
@@ -184,22 +247,36 @@ def children_keys_dict(children):
     return d
 
 
-_EXCLUDED_KEYS = {_INSTANCE, 'ref'}
+_EXCLUDED_KEYS = {'ref', 'key'}
+
+
+def _get_to_inflate_for_type(type_) -> List[str]:
+    l = ['children']
+    if issubclass(type_, Gtk.Widget):
+        if issubclass(type_, Gtk.MenuButton):
+            l.append('popover')
+    return l
+
+
+def prop_values_equal(a, b):
+    if a == b:
+        return True
+    return False
 
 
 def render_tree(old, new):
     # Split the tree input
     old_type, old_props = old or (None, {})
-    # Get the instance so that we can transition it to the new tree
-    instance = old_props.get(_INSTANCE)
-    if _INSTANCE in old_props:
-        del old_props[_INSTANCE]
+    instance = old.instance if old else None
     new_type, new_props = new
 
-    # Make sure that we have _INSTANCES for the 'children' prop
-    old_children = old_props.get('children', [])
-    new_children = new_props.get('children', [])
-    children = render_treelist(old_children, new_children)
+    to_inflate = _get_to_inflate_for_type(new_type)
+    for k in to_inflate:
+        old = old_props.get(k, [])
+        new = new_props.get(k, [])
+        v = render_treelist(old, new)
+        if v:
+            new_props[k] = v
 
     if old_type == new_type:
         changes = []
@@ -228,26 +305,30 @@ def render_tree(old, new):
         if new_props.get('ref'):
             new_props['ref'](instance)
 
-    new_props[_INSTANCE] = instance
-    return Node(new_type, **new_props)
+    node = Node(new_type, **new_props)
+    node.instance = instance
+    return node
 
 
 def render_treelist(old, new):
-    # Make sure that we have _INSTANCES for the 'children' prop
     old = old or []
+    if isinstance(old, Node):
+        old = [old]
+    if isinstance(new, Node):
+        new = [new]
     old_keys = children_keys_dict(old)
     new_keys = children_keys_dict(new)
     ret = []
 
     for k, v in old_keys.items():
         if k not in new_keys:
-            # TODO
-            print('Destroy child', v)
+            if v.instance is not None:
+                v.instance.destroy()
     for i, v in enumerate(new):
         k = treeitem_to_key(i, v)
         ret.append(render_tree(old_keys.get(k), v))
 
-    return new
+    return ret
 
 
 def run(type_, **kwargs):
