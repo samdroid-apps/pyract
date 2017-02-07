@@ -233,6 +233,9 @@ class GtkComponent(BaseComponent):
 
     def destroy(self):
         self._instance.destroy()
+        # FIXME: Destroy props['popover'], props['image'] when needed
+        for child in (self._props.get('children') or []):
+            child.instance.destroy()
 
 
 
@@ -280,12 +283,21 @@ class Component(BaseComponent):
     def render(self, **props) -> Union[Node, List[Node]]:
         return []
 
+    def _get_subtreelist(self):
+        stl = (self._subtreelist or [])
+        if isinstance(stl, Node):
+            stl = [stl]
+        return stl
+
     def get_widgets(self):
         widgets = []
-        for node in (self._subtreelist or []):
+        for node in self._get_subtreelist():
             widgets.extend(node.instance.get_widgets())
         return widgets
 
+    def destroy(self):
+        for node in self._get_subtreelist():
+            node.instance.destroy()
 
 
 def treeitem_to_key(i, v):
