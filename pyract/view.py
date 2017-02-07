@@ -64,8 +64,9 @@ class GtkComponent(BaseComponent):
         self._type = type_
         self._instance = type_()
 
-        # visible=True is a default prop
-        self.update([('visible', True)])
+        if not issubclass(self._type, Gtk.Popover):
+            # visible=True is a default prop
+            self.update([('visible', True)])
         self.update(props.items())
 
     def update(self, updated_list=[]):
@@ -178,6 +179,45 @@ class GtkComponent(BaseComponent):
                 if child not in old:
                     self._instance.add(child)
                 self._instance.reorder_child(child, i)
+        elif issubclass(self._type, Gtk.FlowBox):
+            old = self._instance.get_children()
+            for old_child in old:
+                if old_child not in children:
+                    self._instance.remove(old_child)
+            for i, child in enumerate(children):
+                if child not in old:
+                    if not isinstance(child, Gtk.FlowBoxChild):
+                        raise ChildrenFormatException(
+                            'FlowBox children must be Gtk.FlowBoxChild, '
+                            'got {}'.format(child))
+                    self._instance.add(child)
+                child.__flowbox_index = i
+
+            def _flowbox_sort(a, b):
+                return a.__flowbox_index - b.__flowbox_index
+
+            self._instance.set_sort_func(_flowbox_sort)
+            self._instance.invalidate_sort()
+        elif issubclass(self._type, Gtk.HeaderBar):
+            start = []
+            end = []
+            for node in child_items:
+                if node.props.get('child__is_end'):
+                    end.extend(node.instance.get_widgets())
+                else:
+                    start.extend(node.instance.get_widgets())
+
+            # This is broken if children move from start->end
+            old = self._instance.get_children()
+            for old_child in old:
+                if old_child not in children:
+                    self._instance.remove(old_child)
+            for child in start:
+                if child not in old:
+                    self._instance.pack_start(child)
+            for child in end:
+                if child not in old:
+                    self._instance.pack_end(child)
         else:
             if len(children):
                 raise ChildrenFormatException(
@@ -188,7 +228,7 @@ class GtkComponent(BaseComponent):
         return [self._instance]
 
     def destroy(self):
-        self._instance.destory()
+        self._instance.destroy()
 
 
 
@@ -210,6 +250,9 @@ class Component(BaseComponent):
 
     def update(self, updated_list=[]):
         for k, v in updated_list:
+            if k.startswith('child__'):
+                continue  # We don't handle the child props ourself
+
             old = self.props.get(k)
             if isinstance(old, Observable):
                 old.disconnect_by_func(self._observable_changed_cb)
@@ -288,7 +331,7 @@ def render_tree(old, new):
         for k, v in new_props.items():
             if k in _EXCLUDED_KEYS:
                 continue
-            if old_props.get(k) != v:
+            if not prop_values_equal(old_props.get(k), v):
                 changes.append((k, v))
         if changes:
             instance.update(changes)
