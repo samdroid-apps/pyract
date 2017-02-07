@@ -237,10 +237,7 @@ class Component(BaseComponent):
     def __init__(self, **props):
         self.props = {}
         self.state = None
-        if hasattr(type(self), 'State'):
-            state_cls = getattr(type(self), 'State')
-            self.state = state_cls()
-            self.state.changed_signal.connect(self._observable_changed_cb)
+        self._rendered_yet = False
 
         self._subtreelist = None
         self.update(props.items())
@@ -261,10 +258,20 @@ class Component(BaseComponent):
             if isinstance(v, Observable):
                 v.changed_signal.connect(self._observable_changed_cb)
 
+        if not self._rendered_yet:
+            if hasattr(type(self), 'State'):
+                state_cls = getattr(type(self), 'State')
+                self.state = state_cls()
+            self.before_first_render(**self.props)
+            if self.state is not None:
+                self.state.changed_signal.connect(self._observable_changed_cb)
+            self._rendered_yet = True
+
         new = self.render(**self.props)
-        if isinstance(new, Node):
-            new = [new]
         self._subtreelist = render_treelist(self._subtreelist, new)
+
+    def before_first_render(self, **props) -> None:
+        pass
 
     def render(self, **props) -> Union[Node, List[Node]]:
         return []
