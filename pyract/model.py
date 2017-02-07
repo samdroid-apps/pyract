@@ -153,6 +153,7 @@ class ObservableList(ObservableValue):
     def __getitem__(self, y):  return self.value[y]
     def __iter__(self):  return iter(self.value)
     def __len__(self):  return len(self.value)
+    def __bool__(self):  return bool(self.value)
 
     def append(self, item):
         self.value.append(item)
