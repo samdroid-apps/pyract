@@ -184,6 +184,9 @@ class GtkComponent(BaseComponent):
                     self._instance.add(child)
                 self._instance.reorder_child(child, i)
         elif issubclass(self._type, Gtk.FlowBox):
+            # Don't try and sort things while we are changing the children
+            self._instance.set_sort_func(None)
+
             old = self._instance.get_children()
             for old_child in old:
                 if old_child not in children:
