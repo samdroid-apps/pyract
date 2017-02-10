@@ -39,8 +39,7 @@ class AppComponent(Component):
         # re-rendered, then the Node trees get diffed and only the changed
         # Nodes and properties are updated.
         # The type is either a Gtk.Widget or pyract.Component subclass.
-        # "signal__" props are the same as connecting a GObject signal
-        return Node(Gtk.Window, signal__destroy=Gtk.main_quit,
+        return Node(Gtk.ApplicationWindow,
                     title='My Counter App',
                     children=[
             Node(Gtk.Box, orientation=Gtk.Orientation.VERTICAL,
@@ -52,6 +51,8 @@ class AppComponent(Component):
                      class_names=['suggested-action', 'bottom-button'],
                      # Hide the button when the counter gets to ten
                      visible=model.counter.value < 10,
+                     # "signal__" props are the same as connecting a
+                     # GObject signal normally
                      signal__clicked=self._button_clicked_cb),
                 # Add a reset button, but only show it when counter == 10
                 Node(Gtk.Button, label='Reset',
@@ -82,6 +83,5 @@ load_css('''
 ''')
 
 
-# The run function works just like constructing a Node, but it enters
-# the mainloop and runs the app!
-run(AppComponent, model=AppModel())
+# The run function takes a node, and runs the app
+run(Node(AppComponent, model=AppModel()), 'today.sam.pyract.counter')

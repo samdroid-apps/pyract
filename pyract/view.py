@@ -15,7 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with Pyract.  If not, see <http://www.gnu.org/licenses/>.
 
-from gi.repository import Gtk, Gdk
+import sys
+from gi.repository import Gtk, Gdk, GObject
 from typing import Union, List
 
 from .model import Observable
@@ -50,9 +51,11 @@ def _node_list_single_widget(nl):
         return widgets[0] if len(widgets) else None
 
 
-class BaseComponent():
+class BaseComponent(GObject.GObject):
+    updated_signal = GObject.Signal('updated')
+
     def __init__(self, **props):
-        pass
+        super().__init__()
 
     def update(self, updated_list=[]):
         pass
@@ -73,6 +76,7 @@ class ChildrenFormatException(RenderException):
 
 class GtkComponent(BaseComponent):
     def __init__(self, type_, **props):
+        super().__init__()
         self._props = {}
         self._type = type_
         self._instance = type_()
@@ -104,6 +108,7 @@ class GtkComponent(BaseComponent):
             else:
                 self.set_property(k, v)
             self._props[k] = v
+        self.updated_signal.emit()
 
     def set_property(self, k, v):
         if k == 'popover' and issubclass(self._type, Gtk.MenuButton):
@@ -245,6 +250,7 @@ class GtkComponent(BaseComponent):
 
 class Component(BaseComponent):
     def __init__(self, **props):
+        super().__init__()
         self.props = {}
         self.state = None
         self._rendered_yet = False
@@ -279,6 +285,7 @@ class Component(BaseComponent):
 
         new = self.render(**self.props)
         self._subtreelist = render_treelist(self._subtreelist, new)
+        self.updated_signal.emit()
 
     def before_first_render(self, **props) -> None:
         pass
@@ -402,9 +409,26 @@ def render_treelist(old, new):
     return ret
 
 
-def run(type_, **kwargs):
-    instance = type_(**kwargs)
-    Gtk.main()
+class _PyractApplication(Gtk.Application):
+    def __init__(self, node, app_id):
+        super().__init__(application_id=app_id)
+        self._node = node
+
+    def do_activate(self):
+        type_, kwargs = self._node
+        instance = type_(**kwargs)
+        self._updated_cb(instance)
+        instance.updated_signal.connect(self._updated_cb)
+
+    def _updated_cb(self, instance):
+        for widget in instance.get_widgets():
+            if isinstance(widget, Gtk.ApplicationWindow) and widget:
+                self.add_window(widget)
+
+
+def run(node, app_id):
+    app = _PyractApplication(node, app_id)
+    app.run(sys.argv)
 
 
 def load_css(data):
