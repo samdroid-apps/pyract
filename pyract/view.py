@@ -81,10 +81,10 @@ class GtkComponent(BaseComponent):
         self._type = type_
         self._instance = type_()
 
+        self.update(props.items())
         if not issubclass(self._type, Gtk.Popover):
             # visible=True is a default prop
             self.update([('visible', True)])
-        self.update(props.items())
 
     def update(self, updated_list=[]):
         for k, v in updated_list:
