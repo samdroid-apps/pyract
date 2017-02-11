@@ -188,9 +188,13 @@ class GtkComponent(BaseComponent):
                 if child not in old:
                     self._instance.add(child)
                 self._instance.reorder_child(child, i)
-        elif issubclass(self._type, Gtk.FlowBox):
+        elif issubclass(self._type, (Gtk.FlowBox, Gtk.ListBox)):
             # Don't try and sort things while we are changing the children
             self._instance.set_sort_func(None)
+
+            child_type = (Gtk.FlowBoxChild
+                          if issubclass(self._type, Gtk.FlowBox)
+                          else Gtk.ListBoxRow)
 
             old = self._instance.get_children()
             for old_child in old:
@@ -198,9 +202,10 @@ class GtkComponent(BaseComponent):
                     self._instance.remove(old_child)
             for i, child in enumerate(children):
                 if child not in old:
-                    if not isinstance(child, Gtk.FlowBoxChild):
+                    if not isinstance(child, child_type):
                         raise ChildrenFormatException(
-                            'FlowBox children must be Gtk.FlowBoxChild, '
+                            '{Flow,List}Box children must be '
+                            'Gtk.{Flow,List}BoxChild respectively, '
                             'got {}'.format(child))
                     self._instance.add(child)
                 child.__flowbox_index = i
