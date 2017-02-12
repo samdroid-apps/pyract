@@ -160,6 +160,11 @@ class ObservableList(ObservableValue):
         item.changed_signal.connect(self._item_changed_cb)
         self.changed_signal.emit()
 
+    def insert(self, index, item):
+        self.value.insert(index, item)
+        item.changed_signal.connect(self._item_changed_cb)
+        self.changed_signal.emit()
+
     def clear(self):
         for item in self:
             item.disconnect_by_func(self._item_changed_cb)
