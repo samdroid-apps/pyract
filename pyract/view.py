@@ -92,6 +92,8 @@ class GtkComponent(BaseComponent):
                 # TODO: Unbind old handler
                 if v is not None:
                     self._instance.connect(k[8:], v)
+            elif k.startswith('data__'):
+                setattr(self._instance, k[6:], v)
             elif k.startswith('child__'):
                 continue # We don't handle the child props ourself
             elif k == 'auto_grab_focus':
