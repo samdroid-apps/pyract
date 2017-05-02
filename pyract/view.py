@@ -172,11 +172,16 @@ class GtkComponent(BaseComponent):
                     self._instance.set_titlebar(headers[0])
 
             if len(children) == 1:
-                if self._instance.get_child() != children[0]:
+                # We don't trust the Gtk.Bin.get_child(), as it may have been
+                # wrapped (eg. adding something to a Gtk.ScrolledWindow
+                # can replace it with an inner Gtk.Viewport)
+                if not hasattr(self, 'box_inner_child') \
+                   or self.box_inner_child != children[0]:
                     old = self._instance.get_child()
                     if old:
                         self._instance.remove(old)
                     self._instance.add(children[0])
+                    self.box_inner_child = children[0]
             else:
                 raise ChildrenFormatException(
                     'GtkBin subclass {} should only have 1 child, got {}'.format(
