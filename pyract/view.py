@@ -156,13 +156,14 @@ class GtkComponent(BaseComponent):
 
         if issubclass(self._type, Gtk.Bin):
             if issubclass(self._type, Gtk.Window):
+                all_children = children
                 children = []
                 headers = []
-                for node in child_items:
-                    if node.props.get('child__is_header'):
-                        headers.extend(node.instance.get_widgets())
+                for w in all_children:
+                    if isinstance(w, Gtk.HeaderBar):
+                        headers.append(w)
                     else:
-                        children.extend(node.instance.get_widgets())
+                        children.append(w)
 
                 if len(headers) > 1:
                     raise ChildrenFormatException(
